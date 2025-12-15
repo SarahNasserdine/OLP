@@ -1,0 +1,45 @@
+# Build results
+bin/
+obj/
+out/
+
+# User-specific files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Visual Studio files
+.vs/
+*.dbmdl
+*.dbproj.schemaview
+
+# Logs and temporary files
+*.log
+*.tlog
+*.tmp
+*.temp
+*.bak
+
+# Secrets and environment
+.env
+appsettings.Development.json
+appsettings.Local.json
+
+# Packages
+packages/
+*.nupkg
+*.snupkg
+
+# Backup & publish folders
+publish/
+dist/
+node_modules/
+
+# IDE settings
+.idea/
+.vscode/
+
+# OS generated files
+Thumbs.db
+.DS_Store
