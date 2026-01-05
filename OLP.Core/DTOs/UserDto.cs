@@ -9,5 +9,8 @@ namespace OLP.Core.DTOs
         public string Email { get; set; } = null!;
         public string Role { get; set; } = "Student";
         public DateTime CreatedAt { get; set; }
+
+        public bool IsActive { get; set; }
     }
 }
+

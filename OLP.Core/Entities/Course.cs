@@ -13,7 +13,9 @@ namespace OLP.Core.Entities
         public string Category { get; set; } = null!;
         public DifficultyLevel Difficulty { get; set; }
         public int? EstimatedDuration { get; set; }
-        public string? Thumbnail { get; set; }
+        public string? ThumbnailUrl { get; set; }
+        public string? ThumbnailPublicId { get; set; }
+
 
         // ✅ Add these two properties:
         public int CreatedById { get; set; }     // foreign key to User

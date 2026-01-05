@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using OLP.Core.Entities;
 using OLP.Core.Interfaces;
 using OLP.Infrastructure.Data;
@@ -11,11 +11,15 @@ namespace OLP.Infrastructure.Repositories
         public CourseRepository(AppDbContext context) => _context = context;
 
         public async Task<IEnumerable<Course>> GetAllAsync() =>
-      await _context.Courses.Include(c => c.Creator).ToListAsync();
-
+            await _context.Courses
+                .Include(c => c.Creator)   // needed for CreatorName in DTO
+                .ToListAsync();
 
         public async Task<Course?> GetByIdAsync(int id) =>
-            await _context.Courses.Include(c => c.Lessons).FirstOrDefaultAsync(c => c.Id == id);
+            await _context.Courses
+                .Include(c => c.Creator)  // ✅ ADD THIS (you need it)
+                .Include(c => c.Lessons)  // keep if you want lessons in details
+                .FirstOrDefaultAsync(c => c.Id == id);
 
         public async Task AddAsync(Course course) =>
             await _context.Courses.AddAsync(course);
