@@ -1,4 +1,5 @@
 using OLP.Core.Entities;
+using OLP.Core.Enums;
 
 namespace OLP.Core.Interfaces
 {
@@ -6,6 +7,8 @@ namespace OLP.Core.Interfaces
     {
         Task<IEnumerable<Course>> GetAllAsync();
         Task<Course?> GetByIdAsync(int id);
+        Task<IEnumerable<Course>> SearchAsync(string? q, string? category, DifficultyLevel? difficulty, string? sort);
+        Task<int> CountByCreatorAsync(int creatorId);
         Task AddAsync(Course course);
         Task UpdateAsync(Course course);
         Task DeleteAsync(Course course);

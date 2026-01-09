@@ -6,6 +6,7 @@ namespace OLP.Core.Interfaces
     {
         Task<IEnumerable<Lesson>> GetByCourseIdAsync(int courseId);
         Task<Lesson?> GetByIdAsync(int id);
+        Task<int> CountByCourseAsync(int courseId);
         Task AddAsync(Lesson lesson);
         Task UpdateAsync(Lesson lesson);
         Task DeleteAsync(Lesson lesson);

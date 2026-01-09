@@ -7,6 +7,7 @@ namespace OLP.Core.Interfaces
         Task AddAsync(LessonCompletion completion);
         Task<bool> IsCompletedAsync(int userId, int lessonId);
         Task<IEnumerable<LessonCompletion>> GetByUserAsync(int userId);
+        Task<int> CountCompletedInCourseAsync(int userId, int courseId);
         Task SaveChangesAsync();
     }
 }

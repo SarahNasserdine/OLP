@@ -9,6 +9,8 @@ namespace OLP.Core.Entities
         public int CourseId { get; set; }
         public DateTime EnrollDate { get; set; } = DateTime.UtcNow;
         public decimal Progress { get; set; } = 0;
+        public int? LastAccessedLessonId { get; set; }
+        public DateTime? LastAccessedAt { get; set; }
 
         // Navigation
         public User User { get; set; } = null!;

@@ -28,6 +28,12 @@ namespace OLP.Infrastructure.Repositories
             => await _context.Users
                 .FirstOrDefaultAsync(u => u.Email == email && !u.IsDeleted);
 
+        public async Task<int> CountActiveStudentsAsync()
+            => await _context.Users.CountAsync(u =>
+                !u.IsDeleted &&
+                u.IsActive &&
+                u.Role == OLP.Core.Enums.UserRole.Student);
+
         public async Task AddAsync(User user)
             => await _context.Users.AddAsync(user);
 

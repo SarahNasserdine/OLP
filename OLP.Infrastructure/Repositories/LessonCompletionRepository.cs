@@ -19,6 +19,12 @@ namespace OLP.Infrastructure.Repositories
         public async Task<IEnumerable<LessonCompletion>> GetByUserAsync(int userId) =>
             await _context.LessonCompletions.Include(lc => lc.Lesson).Where(lc => lc.UserId == userId).ToListAsync();
 
+        public async Task<int> CountCompletedInCourseAsync(int userId, int courseId) =>
+            await _context.LessonCompletions
+                .Include(lc => lc.Lesson)
+                .Where(lc => lc.UserId == userId && lc.Lesson.CourseId == courseId)
+                .CountAsync();
+
         public async Task SaveChangesAsync() => await _context.SaveChangesAsync();
     }
 }

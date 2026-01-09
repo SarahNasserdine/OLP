@@ -1,143 +1,248 @@
-﻿#nullable disable
-using Microsoft.EntityFrameworkCore;
-using OLP.Core.DTOs;
-using OLP.Core.Entities;
-using OLP.Core.Interfaces;
-using OLP.Infrastructure.Data;
 using System;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
+using System.Collections.Generic;
+using OLP.Core.DTOs;
+using OLP.Core.Entities;
+using OLP.Core.Enums;
+using OLP.Core.Interfaces;
 
 namespace OLP.Infrastructure.Services
 {
     public class QuizService : IQuizService
     {
-        private readonly AppDbContext _context;
+        private readonly IQuizRepository _quizRepo;
         private readonly IQuizAttemptRepository _attemptRepo;
         private readonly IQuizAttemptAnswerRepository _attemptAnswerRepo;
 
         public QuizService(
-            AppDbContext context,
+            IQuizRepository quizRepo,
             IQuizAttemptRepository attemptRepo,
             IQuizAttemptAnswerRepository attemptAnswerRepo)
         {
-            _context = context;
+            _quizRepo = quizRepo;
             _attemptRepo = attemptRepo;
             _attemptAnswerRepo = attemptAnswerRepo;
         }
 
-        // ==================================================
-        // When a student submits a quiz
-        // ==================================================
-        public async Task<QuizAttempt> SubmitAttemptAsync(int userId, SubmitQuizDto dto)
+        public async Task<QuizAttempt> StartAttemptAsync(int userId, int quizId)
         {
-            var quiz = await _context.Quizzes
-                .Include(q => q.Questions)
-                    .ThenInclude(q => q.Answers)
-                .FirstOrDefaultAsync(q => q.Id == dto.QuizId);
-
+            var quiz = await _quizRepo.GetByIdAsync(quizId);
             if (quiz == null)
                 throw new Exception("Quiz not found.");
 
-            int totalScore = 0;
-            int maxScore = quiz.Questions?.Sum(q => q.Points) ?? 0;
+            var userAttempts = await _attemptRepo.GetByUserIdAsync(userId);
+            int attemptNumber = userAttempts.Count(a => a.QuizId == quizId) + 1;
+
+            if (!quiz.AllowRetake && userAttempts.Any(a => a.QuizId == quizId))
+                throw new Exception("Retake is not allowed for this quiz.");
 
             var attempt = new QuizAttempt
             {
-                QuizId = quiz.Id,
+                QuizId = quizId,
                 UserId = userId,
-                AttemptDate = DateTime.UtcNow
+                AttemptNumber = attemptNumber,
+                AttemptDate = DateTime.UtcNow,
+                StartedAt = DateTime.UtcNow,
+                Score = 0
             };
 
             await _attemptRepo.AddAsync(attempt);
-            await _attemptRepo.SaveChangesAsync(); // Get attempt.Id after save
+            await _attemptRepo.SaveChangesAsync();
+            return attempt;
+        }
 
-            foreach (var ans in dto.Answers ?? Enumerable.Empty<SubmitAnswerDto>())
+        public async Task<QuizAttempt> SubmitAttemptAsync(int userId, SubmitQuizDto dto)
+        {
+            var quiz = await _quizRepo.GetByIdWithQuestionsAsync(dto.QuizId);
+            if (quiz == null)
+                throw new Exception("Quiz not found.");
+
+            QuizAttempt? attempt = null;
+            if (dto.AttemptId.HasValue)
             {
-                var question = quiz.Questions?.FirstOrDefault(q => q.Id == ans.QuestionId);
-                if (question == null) continue;
+                attempt = await _attemptRepo.GetByIdAsync(dto.AttemptId.Value);
+                if (attempt == null)
+                    throw new Exception("Attempt not found.");
+                if (attempt.UserId != userId || attempt.QuizId != dto.QuizId)
+                    throw new Exception("Invalid attempt.");
+                if (attempt.SubmittedAt.HasValue)
+                    throw new Exception("Attempt already submitted.");
+            }
 
-                bool isCorrect = false;
+            if (attempt == null)
+            {
+                var userAttempts = await _attemptRepo.GetByUserIdAsync(userId);
+                int attemptNumber = userAttempts.Count(a => a.QuizId == dto.QuizId) + 1;
 
-                // Case 1: Short answer question
-                if (question.QuestionType == Core.Enums.QuestionType.ShortAnswer)
+                if (!quiz.AllowRetake && userAttempts.Any(a => a.QuizId == dto.QuizId))
+                    throw new Exception("Retake is not allowed for this quiz.");
+
+                attempt = new QuizAttempt
                 {
-                    var correctAnswer = question.Answers?
-                        .FirstOrDefault(a => a.IsCorrect)?.AnswerText;
+                    QuizId = dto.QuizId,
+                    UserId = userId,
+                    AttemptNumber = attemptNumber,
+                    AttemptDate = DateTime.UtcNow,
+                    StartedAt = DateTime.UtcNow,
+                    Score = 0
+                };
 
-                    isCorrect = string.Equals(
-                        ans.GivenTextAnswer?.Trim(),
-                        correctAnswer?.Trim(),
-                        StringComparison.OrdinalIgnoreCase);
-                }
-                // Case 2: MCQ / True-False
-                else if (ans.AnswerId != null)
+                await _attemptRepo.AddAsync(attempt);
+                await _attemptRepo.SaveChangesAsync();
+            }
+
+            if (quiz.TimeLimit.HasValue)
+            {
+                var elapsed = DateTime.UtcNow - attempt.StartedAt;
+                if (elapsed.TotalMinutes > quiz.TimeLimit.Value)
                 {
-                    var selectedAnswer = question.Answers?
-                        .FirstOrDefault(a => a.Id == ans.AnswerId);
-
-                    if (selectedAnswer?.IsCorrect == true)
-                        isCorrect = true;
+                    attempt.SubmittedAt = DateTime.UtcNow;
+                    attempt.Score = 0;
+                    await _attemptRepo.SaveChangesAsync();
+                    throw new Exception("Time limit exceeded.");
                 }
+            }
 
-                if (isCorrect)
-                    totalScore += question.Points;
+            var questions = quiz.Questions?.ToList() ?? new List<Question>();
+
+            var submittedByQuestion = (dto.Answers ?? new List<SubmitAnswerDto>())
+                .GroupBy(a => a.QuestionId)
+                .ToDictionary(g => g.Key, g => g.Last());
+
+            int earnedPoints = 0;
+            int totalPoints = questions.Sum(q => Math.Max(0, q.Points));
+
+            foreach (var q in questions)
+            {
+                submittedByQuestion.TryGetValue(q.Id, out var submitted);
 
                 var attemptAnswer = new QuizAttemptAnswer
                 {
                     QuizAttemptId = attempt.Id,
-                    QuestionId = question.Id,
-                    AnswerId = ans.AnswerId,
-                    GivenTextAnswer = ans.GivenTextAnswer,
-                    IsCorrect = isCorrect
+                    QuestionId = q.Id,
+                    CreatedAt = DateTime.UtcNow
                 };
 
+                bool isCorrect = false;
+
+                if (q.QuestionType == QuestionType.MCQ || q.QuestionType == QuestionType.TF)
+                {
+                    if (submitted?.AnswerId != null)
+                    {
+                        var selected = (q.Answers ?? new List<Answer>())
+                            .FirstOrDefault(a => a.Id == submitted.AnswerId.Value);
+
+                        attemptAnswer.AnswerId = submitted.AnswerId.Value;
+                        isCorrect = selected?.IsCorrect == true;
+                    }
+                }
+                else if (q.QuestionType == QuestionType.MSQ)
+                {
+                    var selectedIds = (submitted?.AnswerIds ?? new List<int>())
+                        .Distinct()
+                        .OrderBy(x => x)
+                        .ToList();
+
+                    var correctIds = (q.Answers ?? new List<Answer>())
+                        .Where(a => a.IsCorrect)
+                        .Select(a => a.Id)
+                        .OrderBy(x => x)
+                        .ToList();
+
+                    isCorrect = correctIds.SequenceEqual(selectedIds);
+                    attemptAnswer.SelectedAnswerIdsJson = JsonSerializer.Serialize(selectedIds);
+                }
+                else if (q.QuestionType == QuestionType.ShortAnswer)
+                {
+                    attemptAnswer.GivenTextAnswer = submitted?.GivenTextAnswer;
+                    isCorrect = false;
+                }
+
+                attemptAnswer.IsCorrect = isCorrect;
+
                 await _attemptAnswerRepo.AddAsync(attemptAnswer);
+
+                if (isCorrect)
+                    earnedPoints += Math.Max(0, q.Points);
             }
 
             await _attemptAnswerRepo.SaveChangesAsync();
 
-            // 🧮 Calculate percentage and store as int
-            if (maxScore > 0)
-            {
-                decimal percentage = ((decimal)totalScore / maxScore) * 100;
-                attempt.Score = Convert.ToInt32(Math.Round(percentage));  // ✅ fix: explicit conversion
-            }
-            else
-            {
-                attempt.Score = 0;
-            }
+            double percent = totalPoints == 0 ? 0 : (earnedPoints * 100.0) / totalPoints;
+            attempt.Score = (int)Math.Round(percent, MidpointRounding.AwayFromZero);
+            attempt.SubmittedAt = DateTime.UtcNow;
 
             await _attemptRepo.SaveChangesAsync();
 
             return attempt;
         }
 
-        // ==================================================
-        // Review a quiz attempt
-        // ==================================================
         public async Task<QuizReviewDto> GetAttemptReviewAsync(int attemptId, int userId)
         {
-            var attempt = await _attemptRepo.GetWithAnswersAsync(attemptId);
+            var attempt = await _attemptRepo.GetByIdAsync(attemptId);
+            if (attempt == null)
+                throw new Exception("Attempt not found.");
 
-            if (attempt == null || attempt.UserId != userId)
-                throw new Exception("Attempt not found or not accessible.");
+            if (attempt.UserId != userId)
+                throw new Exception("Unauthorized attempt review.");
+
+            var quiz = await _quizRepo.GetByIdWithQuestionsAsync(attempt.QuizId);
+            if (quiz == null)
+                throw new Exception("Quiz not found.");
+
+            var attemptAnswers = (await _attemptAnswerRepo.GetByAttemptIdAsync(attemptId)).ToList();
+            var questions = quiz.Questions?.ToList() ?? new List<Question>();
 
             var review = new QuizReviewDto
             {
-                QuizTitle = attempt.Quiz?.Title ?? "Unknown Quiz",
+                AttemptId = attempt.Id,
+                QuizId = quiz.Id,
                 Score = attempt.Score,
+                AttemptNumber = attempt.AttemptNumber,
                 AttemptDate = attempt.AttemptDate,
-                Questions = attempt.Answers?
-                    .Select(a => new QuizReviewQuestionDto
+                Questions = questions.Select(q =>
+                {
+                    var aa = attemptAnswers.FirstOrDefault(x => x.QuestionId == q.Id);
+
+                    List<int> selectedIds = new();
+                    if (!string.IsNullOrWhiteSpace(aa?.SelectedAnswerIdsJson))
                     {
-                        QuestionText = a.Question?.QuestionText ?? "Unknown question",
-                        GivenTextAnswer = a.GivenTextAnswer,
-                        CorrectAnswer = a.Question?.Answers?
-                            .FirstOrDefault(ans => ans.IsCorrect)?.AnswerText,
-                        IsCorrect = a.IsCorrect
-                    })
-                    .ToList() ?? new System.Collections.Generic.List<QuizReviewQuestionDto>()
+                        try
+                        {
+                            selectedIds = JsonSerializer.Deserialize<List<int>>(aa.SelectedAnswerIdsJson!) ?? new();
+                        }
+                        catch
+                        {
+                            selectedIds = new();
+                        }
+                    }
+
+                    return new QuizReviewQuestionDto
+                    {
+                        QuestionId = q.Id,
+                        QuestionText = q.QuestionText,
+                        QuestionType = q.QuestionType.ToString(),
+                        Points = q.Points,
+                        IsCorrect = aa?.IsCorrect ?? false,
+                        SelectedAnswerId = aa?.AnswerId,
+                        SelectedAnswerIds = selectedIds,
+                        GivenTextAnswer = aa?.GivenTextAnswer,
+                        CorrectAnswerIds = (q.Answers ?? new List<Answer>())
+                            .Where(a => a.IsCorrect)
+                            .Select(a => a.Id)
+                            .ToList(),
+                        Answers = (q.Answers ?? new List<Answer>())
+                            .Select(a => new QuizReviewAnswerDto
+                            {
+                                AnswerId = a.Id,
+                                AnswerText = a.AnswerText,
+                                IsCorrect = a.IsCorrect
+                            })
+                            .ToList()
+                    };
+                }).ToList()
             };
 
             return review;

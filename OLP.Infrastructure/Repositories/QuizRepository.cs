@@ -28,10 +28,27 @@ namespace OLP.Infrastructure.Repositories
                 .FirstOrDefaultAsync(q => q.Id == id);
         }
 
+        public async Task<IEnumerable<Quiz>> GetAllWithCourseAsync()
+        {
+            return await _context.Quizzes
+                .Include(q => q.Course)
+                .Include(q => q.Questions)
+                .ToListAsync();
+        }
+
         public async Task<IEnumerable<Quiz>> GetByCourseIdAsync(int courseId)
         {
             return await _context.Quizzes
+                .Include(q => q.Course)
+                .Include(q => q.Questions)
                 .Where(q => q.CourseId == courseId)
+                .ToListAsync();
+        }
+
+        public async Task<IEnumerable<Quiz>> GetByCourseIdsAsync(IEnumerable<int> courseIds)
+        {
+            return await _context.Quizzes
+                .Where(q => courseIds.Contains(q.CourseId))
                 .ToListAsync();
         }
 

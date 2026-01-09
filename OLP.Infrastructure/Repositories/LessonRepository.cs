@@ -18,6 +18,9 @@ namespace OLP.Infrastructure.Repositories
         public async Task<Lesson?> GetByIdAsync(int id) =>
             await _context.Lessons.FirstOrDefaultAsync(l => l.Id == id);
 
+        public async Task<int> CountByCourseAsync(int courseId) =>
+            await _context.Lessons.CountAsync(l => l.CourseId == courseId);
+
         public async Task AddAsync(Lesson lesson) =>
             await _context.Lessons.AddAsync(lesson);
 

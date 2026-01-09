@@ -11,6 +11,8 @@ namespace OLP.Core.Entities
         public int Score { get; set; }
         public int AttemptNumber { get; set; } = 1;
         public DateTime AttemptDate { get; set; } = DateTime.UtcNow;
+        public DateTime StartedAt { get; set; } = DateTime.UtcNow;
+        public DateTime? SubmittedAt { get; set; }
 
         // Navigation
         public Quiz Quiz { get; set; } = null!;

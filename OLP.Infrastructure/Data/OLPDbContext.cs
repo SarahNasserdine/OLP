@@ -19,6 +19,7 @@ namespace OLP.Infrastructure.Data
         public DbSet<QuizAttempt> QuizAttempts { get; set; }
         public DbSet<QuizAttemptAnswer> QuizAttemptAnswers { get; set; }
         public DbSet<Certificate> Certificates { get; set; }
+        public DbSet<PasswordResetToken> PasswordResetTokens { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -168,6 +169,10 @@ namespace OLP.Infrastructure.Data
 
             modelBuilder.Entity<Certificate>()
                 .HasIndex(c => c.VerificationCode)
+                .IsUnique();
+
+            modelBuilder.Entity<PasswordResetToken>()
+                .HasIndex(t => t.TokenHash)
                 .IsUnique();
         }
     }

@@ -13,6 +13,12 @@ namespace OLP.Infrastructure.Repositories
         public async Task<Certificate?> GetByUserAndCourseAsync(int userId, int courseId) =>
             await _context.Certificates.FirstOrDefaultAsync(c => c.UserId == userId && c.CourseId == courseId);
 
+        public async Task<Certificate?> GetByIdAsync(int id) =>
+            await _context.Certificates.FirstOrDefaultAsync(c => c.Id == id);
+
+        public async Task<Certificate?> GetByCodeAsync(string code) =>
+            await _context.Certificates.FirstOrDefaultAsync(c => c.VerificationCode == code);
+
         public async Task<IEnumerable<Certificate>> GetByUserAsync(int userId) =>
             await _context.Certificates.Include(c => c.Course).Where(c => c.UserId == userId).ToListAsync();
 

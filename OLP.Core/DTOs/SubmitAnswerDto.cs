@@ -1,13 +1,18 @@
+using System.Collections.Generic;
+
 namespace OLP.Core.DTOs
 {
     public class SubmitAnswerDto
     {
         public int QuestionId { get; set; }
 
-        // for multiple choice / true-false questions
+        // MCQ / TF
         public int? AnswerId { get; set; }
 
-        // for short answer questions
+        // MSQ
+        public List<int>? AnswerIds { get; set; }
+
+        // ShortAnswer
         public string? GivenTextAnswer { get; set; }
     }
 }

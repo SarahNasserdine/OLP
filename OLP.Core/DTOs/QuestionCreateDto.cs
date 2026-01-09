@@ -8,12 +8,17 @@ namespace OLP.Core.DTOs
         public string QuestionText { get; set; } = null!;
         public string QuestionType { get; set; } = "MCQ";
         public int Points { get; set; } = 1;
+        // ? NEW
+        public int OrderIndex { get; set; } = 0;
         public List<AnswerCreateDto> Answers { get; set; } = new();
+        
     }
 
     public class AnswerCreateDto
     {
         public string AnswerText { get; set; } = null!;
         public bool IsCorrect { get; set; } = false;
+        // ? Matches Answer.OrderIndex (int?)
+        public int? OrderIndex { get; set; }
     }
 }
