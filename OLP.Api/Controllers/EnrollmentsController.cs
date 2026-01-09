@@ -1,8 +1,10 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
+
 using OLP.Core.Entities;
 using OLP.Core.Interfaces;
+using OLP.Api.DTOs.Enrollments;
 
 namespace OLP.Api.Controllers
 {
@@ -17,49 +19,104 @@ namespace OLP.Api.Controllers
             _enrollRepo = enrollRepo;
         }
 
+        // POST /api/courses/{courseId}/enroll
         [HttpPost("courses/{courseId}/enroll")]
         [Authorize(Roles = "Student")]
         public async Task<IActionResult> Enroll(int courseId)
         {
-            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrWhiteSpace(userIdStr))
+                return Unauthorized("Missing user id in token.");
+
+            var userId = int.Parse(userIdStr);
 
             var existing = await _enrollRepo.GetByUserAndCourseAsync(userId, courseId);
-            if (existing != null) return BadRequest("Already enrolled");
+            if (existing != null)
+                return BadRequest("Already enrolled.");
 
             var enroll = new Enrollment
             {
                 UserId = userId,
-                CourseId = courseId
+                CourseId = courseId,
+                EnrollDate = DateTime.UtcNow,
+                Progress = 0
             };
 
             await _enrollRepo.AddAsync(enroll);
             await _enrollRepo.SaveChangesAsync();
 
-            return Ok(enroll);
+            var response = new EnrollResponseDto
+            {
+                EnrollmentId = enroll.Id,
+                CourseId = enroll.CourseId,
+                UserId = enroll.UserId,
+                EnrollDate = enroll.EnrollDate,
+                Message = "Enrolled successfully."
+            };
+
+            return Ok(response);
         }
 
+        // GET /api/my/enrollments
         [HttpGet("my/enrollments")]
         [Authorize(Roles = "Student")]
         public async Task<IActionResult> MyEnrollments()
         {
-            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrWhiteSpace(userIdStr))
+                return Unauthorized("Missing user id in token.");
+
+            var userId = int.Parse(userIdStr);
+
+            // IMPORTANT: Repo should Include Course, but not Course.Enrollments
             var enrolls = await _enrollRepo.GetByUserAsync(userId);
-            return Ok(enrolls);
+
+            var result = enrolls.Select(e => new EnrollmentResponseDto
+            {
+                Id = e.Id,
+                CourseId = e.CourseId,
+                CourseTitle = e.Course?.Title ?? "",
+                CourseThumbnailUrl = e.Course?.ThumbnailUrl,
+                UserId = e.UserId,
+                UserFullName = e.User?.FullName ?? "",
+                UserEmail = e.User?.Email ?? "",
+                EnrollDate = e.EnrollDate,
+                Progress = e.Progress,
+                LastAccessedLessonId = e.LastAccessedLessonId,
+                LastAccessedAt = e.LastAccessedAt
+            });
+
+            return Ok(result);
         }
 
+        // GET /api/courses/{courseId}/enrollments (Admin/SuperAdmin)
         [HttpGet("courses/{courseId}/enrollments")]
         [Authorize(Roles = "Admin,SuperAdmin")]
         public async Task<IActionResult> CourseEnrollments(int courseId)
         {
-            // simple: filter client-side from all enrollments
-            // or create a repo method by course if you want
-            return Ok("Add course-based analytics here if needed.");
+            var enrolls = await _enrollRepo.GetByCourseAsync(courseId);
+
+            var result = enrolls.Select(e => new EnrollmentResponseDto
+            {
+                Id = e.Id,
+                CourseId = e.CourseId,
+                CourseTitle = e.Course?.Title ?? "",
+                CourseThumbnailUrl = e.Course?.ThumbnailUrl,
+                UserId = e.UserId,
+                UserFullName = e.User?.FullName ?? "",
+                UserEmail = e.User?.Email ?? "",
+                EnrollDate = e.EnrollDate,
+                Progress = e.Progress,
+                LastAccessedLessonId = e.LastAccessedLessonId,
+                LastAccessedAt = e.LastAccessedAt
+            });
+
+            return Ok(new
+            {
+                courseId,
+                totalEnrollments = result.Count(),
+                enrollments = result
+            });
         }
     }
 }
-
-// POST /api/courses/{courseId}/enroll → Student
-
-// GET / api / my / enrollments → Student
-
-// GET /api/courses/{courseId}/ enrollments → Admin / SuperAdmin(analytics)

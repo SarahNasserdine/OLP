@@ -37,9 +37,17 @@ namespace OLP.Api.Controllers
         [HttpGet]
         [AllowAnonymous]
         [ProducesResponseType(typeof(IEnumerable<CourseResponseDto>), StatusCodes.Status200OK)]
-        public async Task<IActionResult> GetAll()
+        public async Task<IActionResult> GetAll([FromQuery] string? q, [FromQuery] string? category, [FromQuery] string? difficulty, [FromQuery] string? sort)
         {
-            var courses = await _courseRepo.GetAllAsync();
+            DifficultyLevel? parsedDifficulty = null;
+            if (!string.IsNullOrWhiteSpace(difficulty))
+            {
+                if (!Enum.TryParse<DifficultyLevel>(difficulty, true, out var parsed))
+                    return BadRequest("Difficulty must be one of: Beginner, Intermediate, Advanced.");
+                parsedDifficulty = parsed;
+            }
+
+            var courses = await _courseRepo.SearchAsync(q, category, parsedDifficulty, sort);
             var result = courses.Select(c => c.ToDto());
             return Ok(result);
         }
@@ -173,6 +181,22 @@ namespace OLP.Api.Controllers
             await _courseRepo.SaveChangesAsync();
 
             return Ok(new { message = "Course published" });
+        }
+
+        // ? POST: api/courses/{id}/unpublish
+        [HttpPost("{id:int}/unpublish")]
+        [Authorize(Roles = "Admin,SuperAdmin")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> Unpublish(int id)
+        {
+            var course = await _courseRepo.GetByIdAsync(id);
+            if (course == null) return NotFound();
+
+            course.IsPublished = false;
+            await _courseRepo.SaveChangesAsync();
+
+            return Ok(new { message = "Course unpublished" });
         }
     }
 }

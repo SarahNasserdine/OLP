@@ -29,6 +29,7 @@ builder.Services.AddScoped<IAnswerRepository, AnswerRepository>();
 builder.Services.AddScoped<IQuizAttemptRepository, QuizAttemptRepository>();
 builder.Services.AddScoped<ICertificateRepository, CertificateRepository>();
 builder.Services.AddScoped<IQuizAttemptAnswerRepository, QuizAttemptAnswerRepository>();
+builder.Services.AddScoped<IPasswordResetTokenRepository, PasswordResetTokenRepository>();
 
 // === Services ===
 builder.Services.AddScoped<IQuizService, QuizService>();
@@ -64,6 +65,7 @@ builder.Services.AddControllers()
     });
 
 builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddHttpClient();
 
 // === JWT Authentication ===
 var jwtKey = builder.Configuration.GetValue<string>("Jwt:Key")
