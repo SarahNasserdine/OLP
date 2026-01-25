@@ -12,6 +12,7 @@ namespace OLP.Core.Entities
         public int? TimeLimit { get; set; }
         public bool ShuffleQuestions { get; set; } = false;
         public bool AllowRetake { get; set; } = false;
+        public bool IsFinal { get; set; } = false;
         public bool IsActive { get; set; } = true;
 
         // Navigation

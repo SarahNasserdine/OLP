@@ -8,6 +8,7 @@ using OLP.Core.Enums;
 using System;
 using System.Linq;
 using System.Collections.Generic;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace OLP.Api.Controllers
@@ -59,6 +60,74 @@ namespace OLP.Api.Controllers
                 attempt.AttemptNumber,
                 attempt.StartedAt
             });
+        }
+
+        // POST /api/courses/{courseId}/final-quiz/start - start final quiz with random 10 lesson questions
+        [HttpPost("/api/courses/{courseId}/final-quiz/start")]
+        [Authorize(Roles = "Student")]
+        public async Task<IActionResult> StartFinalQuiz(int courseId)
+        {
+            if (courseId <= 0)
+                return BadRequest("CourseId must be a positive number.");
+
+            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+            var finalQuiz = await _quizRepo.GetFinalByCourseIdAsync(courseId);
+            if (finalQuiz == null)
+            {
+                finalQuiz = new Quiz
+                {
+                    CourseId = courseId,
+                    LessonId = null,
+                    Title = "Final Quiz",
+                    PassingScore = 70,
+                    TimeLimit = null,
+                    ShuffleQuestions = true,
+                    AllowRetake = false,
+                    IsFinal = true,
+                    IsActive = true
+                };
+
+                await _quizRepo.AddAsync(finalQuiz);
+                await _quizRepo.SaveChangesAsync();
+            }
+
+            if (!finalQuiz.IsActive)
+                return BadRequest("Final quiz is not active.");
+
+            var userAttempts = await _attemptRepo.GetByUserIdAsync(userId);
+            var existingAttempt = userAttempts
+                .FirstOrDefault(a => a.QuizId == finalQuiz.Id && !a.SubmittedAt.HasValue);
+
+            if (existingAttempt != null)
+            {
+                var selectedIds = ParseSelectedQuestionIds(existingAttempt.SelectedQuestionIdsJson);
+                if (selectedIds.Count == 0)
+                    return BadRequest("Final quiz has no questions yet.");
+
+                var resumedQuestions = (await _questionRepo.GetByIdsWithAnswersAsync(selectedIds)).ToList();
+
+                var resumed = BuildFinalQuizResponse(finalQuiz, existingAttempt, resumedQuestions);
+                return Ok(resumed);
+            }
+
+            // Always allow retakes for final quiz.
+
+            var questionPool = (await _questionRepo.GetLessonQuestionsByCourseIdAsync(courseId)).ToList();
+            if (!questionPool.Any())
+                return BadRequest("Final quiz has no questions yet.");
+
+            var selectedQuestions = questionPool
+                .OrderBy(_ => Guid.NewGuid())
+                .Take(10)
+                .ToList();
+
+            var attempt = await _quizService.StartAttemptWithSelectedQuestionsAsync(
+                userId,
+                finalQuiz.Id,
+                selectedQuestions.Select(q => q.Id));
+
+            return Ok(BuildFinalQuizResponse(finalQuiz, attempt, selectedQuestions));
         }
 
         [HttpGet("{id}")]
@@ -181,12 +250,14 @@ namespace OLP.Api.Controllers
             {
                 q.Id,
                 q.CourseId,
+                q.LessonId,
                 q.Title,
                 q.PassingScore,
                 q.TimeLimit,
                 q.AllowRetake,
                 q.ShuffleQuestions,
                 q.IsActive,
+                q.IsFinal,
                 QuestionsCount = q.Questions?.Count ?? 0
             });
 
@@ -213,6 +284,7 @@ namespace OLP.Api.Controllers
             {
                 q.Id,
                 q.CourseId,
+                q.LessonId,
                 CourseTitle = q.Course?.Title,
                 q.Title,
                 q.PassingScore,
@@ -220,6 +292,7 @@ namespace OLP.Api.Controllers
                 q.AllowRetake,
                 q.ShuffleQuestions,
                 q.IsActive,
+                q.IsFinal,
                 QuestionsCount = q.Questions?.Count ?? 0
             });
 
@@ -358,6 +431,63 @@ namespace OLP.Api.Controllers
             });
         }
 
+        // PUT /api/courses/{courseId}/final-quiz - update final quiz settings
+        [HttpPut("/api/courses/{courseId}/final-quiz")]
+        [Authorize(Roles = "Admin,SuperAdmin")]
+        public async Task<IActionResult> UpdateFinalQuizSettings(
+            int courseId,
+            [FromBody] FinalQuizSettingsDto dto)
+        {
+            if (courseId <= 0)
+                return BadRequest("CourseId must be a positive number.");
+
+            if (string.IsNullOrWhiteSpace(dto.Title))
+                return BadRequest("Title is required.");
+
+            if (dto.PassingScore < 0)
+                return BadRequest("PassingScore must be >= 0.");
+
+            if (dto.TimeLimit < 0)
+                return BadRequest("TimeLimit must be >= 0.");
+
+            var finalQuiz = await _quizRepo.GetFinalByCourseIdAsync(courseId);
+            if (finalQuiz == null)
+            {
+                finalQuiz = new Quiz
+                {
+                    CourseId = courseId,
+                    LessonId = null,
+                    IsFinal = true
+                };
+
+                await _quizRepo.AddAsync(finalQuiz);
+            }
+
+            finalQuiz.Title = dto.Title.Trim();
+            finalQuiz.PassingScore = dto.PassingScore;
+            finalQuiz.TimeLimit = dto.TimeLimit == 0 ? (int?)null : dto.TimeLimit;
+            finalQuiz.ShuffleQuestions = dto.ShuffleQuestions;
+            finalQuiz.AllowRetake = dto.AllowRetake;
+            finalQuiz.IsActive = dto.IsActive;
+            finalQuiz.IsFinal = true;
+            finalQuiz.LessonId = null;
+
+            await _quizRepo.SaveChangesAsync();
+
+            return Ok(new
+            {
+                finalQuiz.Id,
+                finalQuiz.CourseId,
+                finalQuiz.Title,
+                finalQuiz.PassingScore,
+                finalQuiz.TimeLimit,
+                finalQuiz.ShuffleQuestions,
+                finalQuiz.AllowRetake,
+                finalQuiz.IsActive,
+                finalQuiz.IsFinal
+            });
+        }
+
 
 
         // DELETE /api/questions/{id} - delete question
@@ -386,6 +516,59 @@ namespace OLP.Api.Controllers
             await _answerRepo.DeleteAsync(answer);
             await _answerRepo.SaveChangesAsync();
             return Ok();
+        }
+
+        private static object BuildFinalQuizResponse(Quiz finalQuiz, QuizAttempt attempt, IEnumerable<Question> questions)
+        {
+            return new
+            {
+                finalQuiz.Id,
+                finalQuiz.CourseId,
+                finalQuiz.Title,
+                finalQuiz.PassingScore,
+                finalQuiz.TimeLimit,
+                finalQuiz.AllowRetake,
+                finalQuiz.ShuffleQuestions,
+                AttemptId = attempt.Id,
+                attempt.AttemptNumber,
+                attempt.StartedAt,
+                Questions = questions.Select(q =>
+                {
+                    var answers = q.Answers?.AsEnumerable() ?? Enumerable.Empty<Answer>();
+
+                    answers = finalQuiz.ShuffleQuestions
+                        ? answers.OrderBy(_ => Guid.NewGuid())
+                        : answers.OrderBy(a => a.OrderIndex ?? int.MaxValue).ThenBy(a => a.Id);
+
+                    return new
+                    {
+                        q.Id,
+                        q.QuestionText,
+                        q.QuestionType,
+                        q.Points,
+                        Answers = answers.Select(a => new
+                        {
+                            a.Id,
+                            a.AnswerText
+                        })
+                    };
+                })
+            };
+        }
+
+        private static List<int> ParseSelectedQuestionIds(string? json)
+        {
+            if (string.IsNullOrWhiteSpace(json))
+                return new List<int>();
+
+            try
+            {
+                return JsonSerializer.Deserialize<List<int>>(json) ?? new List<int>();
+            }
+            catch
+            {
+                return new List<int>();
+            }
         }
     }
 }

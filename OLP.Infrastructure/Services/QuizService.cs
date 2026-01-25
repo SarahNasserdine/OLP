@@ -15,15 +15,18 @@ namespace OLP.Infrastructure.Services
         private readonly IQuizRepository _quizRepo;
         private readonly IQuizAttemptRepository _attemptRepo;
         private readonly IQuizAttemptAnswerRepository _attemptAnswerRepo;
+        private readonly IQuestionRepository _questionRepo;
 
         public QuizService(
             IQuizRepository quizRepo,
             IQuizAttemptRepository attemptRepo,
-            IQuizAttemptAnswerRepository attemptAnswerRepo)
+            IQuizAttemptAnswerRepository attemptAnswerRepo,
+            IQuestionRepository questionRepo)
         {
             _quizRepo = quizRepo;
             _attemptRepo = attemptRepo;
             _attemptAnswerRepo = attemptAnswerRepo;
+            _questionRepo = questionRepo;
         }
 
         public async Task<QuizAttempt> StartAttemptAsync(int userId, int quizId)
@@ -35,7 +38,7 @@ namespace OLP.Infrastructure.Services
             var userAttempts = await _attemptRepo.GetByUserIdAsync(userId);
             int attemptNumber = userAttempts.Count(a => a.QuizId == quizId) + 1;
 
-            if (!quiz.AllowRetake && userAttempts.Any(a => a.QuizId == quizId))
+            if (!quiz.AllowRetake && !quiz.IsFinal && userAttempts.Any(a => a.QuizId == quizId))
                 throw new Exception("Retake is not allowed for this quiz.");
 
             var attempt = new QuizAttempt
@@ -46,6 +49,39 @@ namespace OLP.Infrastructure.Services
                 AttemptDate = DateTime.UtcNow,
                 StartedAt = DateTime.UtcNow,
                 Score = 0
+            };
+
+            await _attemptRepo.AddAsync(attempt);
+            await _attemptRepo.SaveChangesAsync();
+            return attempt;
+        }
+
+        public async Task<QuizAttempt> StartAttemptWithSelectedQuestionsAsync(
+            int userId,
+            int quizId,
+            IEnumerable<int> questionIds)
+        {
+            var quiz = await _quizRepo.GetByIdAsync(quizId);
+            if (quiz == null)
+                throw new Exception("Quiz not found.");
+
+            var userAttempts = await _attemptRepo.GetByUserIdAsync(userId);
+            int attemptNumber = userAttempts.Count(a => a.QuizId == quizId) + 1;
+
+            if (!quiz.AllowRetake && !quiz.IsFinal && userAttempts.Any(a => a.QuizId == quizId))
+                throw new Exception("Retake is not allowed for this quiz.");
+
+            var selectedIds = questionIds?.Distinct().ToList() ?? new List<int>();
+
+            var attempt = new QuizAttempt
+            {
+                QuizId = quizId,
+                UserId = userId,
+                AttemptNumber = attemptNumber,
+                AttemptDate = DateTime.UtcNow,
+                StartedAt = DateTime.UtcNow,
+                Score = 0,
+                SelectedQuestionIdsJson = JsonSerializer.Serialize(selectedIds)
             };
 
             await _attemptRepo.AddAsync(attempt);
@@ -105,11 +141,28 @@ namespace OLP.Infrastructure.Services
                 }
             }
 
-            var questions = quiz.Questions?.ToList() ?? new List<Question>();
+            var selectedQuestionIds = ParseSelectedQuestionIds(attempt.SelectedQuestionIdsJson);
+            List<Question> questions;
+
+            if (selectedQuestionIds.Count > 0)
+            {
+                questions = (await _questionRepo.GetByIdsWithAnswersAsync(selectedQuestionIds)).ToList();
+            }
+            else
+            {
+                questions = quiz.Questions?.ToList() ?? new List<Question>();
+            }
 
             var submittedByQuestion = (dto.Answers ?? new List<SubmitAnswerDto>())
                 .GroupBy(a => a.QuestionId)
                 .ToDictionary(g => g.Key, g => g.Last());
+
+            if (selectedQuestionIds.Count > 0)
+            {
+                submittedByQuestion = submittedByQuestion
+                    .Where(kvp => selectedQuestionIds.Contains(kvp.Key))
+                    .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+            }
 
             int earnedPoints = 0;
             int totalPoints = questions.Sum(q => Math.Max(0, q.Points));
@@ -193,7 +246,17 @@ namespace OLP.Infrastructure.Services
                 throw new Exception("Quiz not found.");
 
             var attemptAnswers = (await _attemptAnswerRepo.GetByAttemptIdAsync(attemptId)).ToList();
-            var questions = quiz.Questions?.ToList() ?? new List<Question>();
+            var selectedQuestionIds = ParseSelectedQuestionIds(attempt.SelectedQuestionIdsJson);
+            List<Question> questions;
+
+            if (selectedQuestionIds.Count > 0)
+            {
+                questions = (await _questionRepo.GetByIdsWithAnswersAsync(selectedQuestionIds)).ToList();
+            }
+            else
+            {
+                questions = quiz.Questions?.ToList() ?? new List<Question>();
+            }
 
             var review = new QuizReviewDto
             {
@@ -246,6 +309,21 @@ namespace OLP.Infrastructure.Services
             };
 
             return review;
+        }
+
+        private static List<int> ParseSelectedQuestionIds(string? json)
+        {
+            if (string.IsNullOrWhiteSpace(json))
+                return new List<int>();
+
+            try
+            {
+                return JsonSerializer.Deserialize<List<int>>(json) ?? new List<int>();
+            }
+            catch
+            {
+                return new List<int>();
+            }
         }
     }
 }

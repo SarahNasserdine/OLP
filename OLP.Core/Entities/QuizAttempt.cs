@@ -13,6 +13,7 @@ namespace OLP.Core.Entities
         public DateTime AttemptDate { get; set; } = DateTime.UtcNow;
         public DateTime StartedAt { get; set; } = DateTime.UtcNow;
         public DateTime? SubmittedAt { get; set; }
+        public string? SelectedQuestionIdsJson { get; set; }
 
         // Navigation
         public Quiz Quiz { get; set; } = null!;

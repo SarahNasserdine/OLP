@@ -25,6 +25,26 @@ namespace OLP.Infrastructure.Repositories
                 .ToListAsync();
         }
 
+        public async Task<IEnumerable<Question>> GetByIdsWithAnswersAsync(IEnumerable<int> questionIds)
+        {
+            var ids = questionIds?.Distinct().ToList() ?? new List<int>();
+            if (ids.Count == 0)
+                return new List<Question>();
+
+            return await _context.Questions
+                .Where(q => ids.Contains(q.Id))
+                .Include(q => q.Answers)
+                .ToListAsync();
+        }
+
+        public async Task<IEnumerable<Question>> GetLessonQuestionsByCourseIdAsync(int courseId)
+        {
+            return await _context.Questions
+                .Include(q => q.Answers)
+                .Where(q => q.Quiz.CourseId == courseId && q.Quiz.LessonId != null)
+                .ToListAsync();
+        }
+
         // ✅ Add GetByIdAsync method
         public async Task<Question?> GetByIdAsync(int id)
         {

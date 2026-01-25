@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
+using System.Linq;
 using OLP.Api.DTOs.Lessons;
 using OLP.Core.Entities;
 using OLP.Core.Interfaces;
@@ -53,6 +54,26 @@ namespace OLP.Api.Controllers
             });
 
             return Ok(result);
+        }
+
+        // GET /api/courses/{courseId}/lessons/completed
+        [HttpGet("courses/{courseId}/lessons/completed")]
+        [Authorize(Roles = "Student")]
+        public async Task<IActionResult> GetCompletedLessons(int courseId)
+        {
+            if (courseId <= 0)
+                return BadRequest("CourseId must be a positive number.");
+
+            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            var completions = await _completionRepo.GetByUserAsync(userId);
+
+            var lessonIds = completions
+                .Where(c => c.Lesson != null && c.Lesson.CourseId == courseId)
+                .Select(c => c.LessonId)
+                .Distinct()
+                .ToList();
+
+            return Ok(lessonIds);
         }
 
         // POST /api/courses/{courseId}/lessons

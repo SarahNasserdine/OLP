@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System;
 using System.Security.Claims;
 using OLP.Core.Enums;
 using OLP.Core.Interfaces;
@@ -79,7 +80,30 @@ namespace OLP.Api.Controllers
             if (user == null) return NotFound();
 
             // Profile update
-            user.FullName = dto.FullName;
+            if (!string.IsNullOrWhiteSpace(dto.FullName))
+                user.FullName = dto.FullName;
+
+            if (!string.IsNullOrWhiteSpace(dto.Email))
+            {
+                if (role != "SuperAdmin")
+                    return Forbid();
+
+                var newEmail = dto.Email.Trim();
+                var currentEmail = user.Email ?? "";
+                if (!string.Equals(newEmail, currentEmail, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (await _userRepo.EmailExistsAsync(newEmail))
+                        return BadRequest("Email already exists");
+
+                    var isOlpEmail = newEmail.EndsWith("@olp.com", StringComparison.OrdinalIgnoreCase);
+                    if ((user.Role == UserRole.Admin || user.Role == UserRole.SuperAdmin) && !isOlpEmail)
+                        return BadRequest("Admin and SuperAdmin emails must use the @olp.com domain.");
+                    if (user.Role == UserRole.Student && isOlpEmail && role != "SuperAdmin")
+                        return BadRequest("Student emails cannot use the @olp.com domain.");
+
+                    user.Email = newEmail;
+                }
+            }
 
             // Moderation field (Admin/SuperAdmin only)
             if ((role == "Admin" || role == "SuperAdmin") && dto.IsActive.HasValue)
@@ -102,6 +126,13 @@ namespace OLP.Api.Controllers
 
             if (!Enum.TryParse<UserRole>(dto.Role, ignoreCase: true, out var newRole))
                 return BadRequest("Invalid role.");
+
+            var email = user.Email ?? "";
+            var isOlpEmail = email.Trim().EndsWith("@olp.com", StringComparison.OrdinalIgnoreCase);
+            if ((newRole == UserRole.Admin || newRole == UserRole.SuperAdmin) && !isOlpEmail)
+                return BadRequest("Admin and SuperAdmin emails must use the @olp.com domain.");
+            if (newRole == UserRole.Student && isOlpEmail)
+                return BadRequest("Student emails cannot use the @olp.com domain.");
 
             user.Role = newRole;
             await _userRepo.SaveChangesAsync();

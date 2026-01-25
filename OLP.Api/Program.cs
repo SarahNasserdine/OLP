@@ -4,6 +4,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Text;
 using System.Text.Json.Serialization;
+using QuestPDF.Infrastructure;
 
 using OLP.Infrastructure.Data;
 using OLP.Core.Interfaces;
@@ -36,6 +37,7 @@ builder.Services.AddScoped<IQuizService, QuizService>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<CourseService>();
 builder.Services.AddScoped<CertificateService>();
+builder.Services.AddScoped<CertificatePdfBuilder>();
 
 // === Cloudinary ===
 builder.Services.Configure<CloudinarySettings>(
@@ -125,6 +127,8 @@ builder.Services.AddSwaggerGen(c =>
         }
     });
 });
+
+QuestPDF.Settings.License = LicenseType.Community;
 
 var app = builder.Build();
 

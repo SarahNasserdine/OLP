@@ -28,6 +28,12 @@ namespace OLP.Infrastructure.Repositories
                 .FirstOrDefaultAsync(q => q.Id == id);
         }
 
+        public async Task<Quiz?> GetFinalByCourseIdAsync(int courseId)
+        {
+            return await _context.Quizzes
+                .FirstOrDefaultAsync(q => q.CourseId == courseId && q.IsFinal);
+        }
+
         public async Task<IEnumerable<Quiz>> GetAllWithCourseAsync()
         {
             return await _context.Quizzes

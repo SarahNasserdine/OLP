@@ -26,6 +26,9 @@ namespace OLP.Infrastructure.Services
         // === Register a new student ===
         public async Task<User> RegisterAsync(string fullName, string email, string password)
         {
+            if (IsOlpEmail(email))
+                throw new Exception("Student emails cannot use the @olp.com domain.");
+
             if (await _userRepo.EmailExistsAsync(email))
                 throw new Exception("Email already exists");
 
@@ -117,6 +120,12 @@ namespace OLP.Infrastructure.Services
             );
 
             return new JwtSecurityTokenHandler().WriteToken(token);
+        }
+
+        private static bool IsOlpEmail(string email)
+        {
+            return !string.IsNullOrWhiteSpace(email)
+                && email.Trim().EndsWith("@olp.com", StringComparison.OrdinalIgnoreCase);
         }
     }
 }

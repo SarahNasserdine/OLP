@@ -6,6 +6,7 @@ namespace OLP.Core.Interfaces
     {
         Task<Quiz?> GetByIdAsync(int id);
         Task<Quiz?> GetByIdWithQuestionsAsync(int id);
+        Task<Quiz?> GetFinalByCourseIdAsync(int courseId);
         Task<IEnumerable<Quiz>> GetAllWithCourseAsync();
         Task AddAsync(Quiz quiz);
         Task<IEnumerable<Quiz>> GetByCourseIdAsync(int courseId);
