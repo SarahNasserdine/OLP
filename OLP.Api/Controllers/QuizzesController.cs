@@ -488,6 +488,51 @@ namespace OLP.Api.Controllers
             });
         }
 
+        // PUT /api/quizzes/{id} - update quiz details (Admin/SuperAdmin)
+        [HttpPut("{id}")]
+        [Authorize(Roles = "Admin,SuperAdmin")]
+        public async Task<IActionResult> UpdateQuiz(int id, [FromBody] QuizCreateDto dto)
+        {
+            if (dto.CourseId <= 0)
+                return BadRequest("CourseId must be a positive number.");
+
+            if (string.IsNullOrWhiteSpace(dto.Title))
+                return BadRequest("Title is required.");
+
+            if (dto.PassingScore < 0)
+                return BadRequest("PassingScore must be >= 0.");
+
+            if (dto.TimeLimit < 0)
+                return BadRequest("TimeLimit must be >= 0.");
+
+            var quiz = await _quizRepo.GetByIdAsync(id);
+            if (quiz == null)
+                return NotFound("Quiz not found.");
+
+            quiz.CourseId = dto.CourseId;
+            quiz.LessonId = dto.LessonId;
+            quiz.Title = dto.Title.Trim();
+            quiz.PassingScore = dto.PassingScore;
+            quiz.TimeLimit = dto.TimeLimit == 0 ? (int?)null : dto.TimeLimit;
+            quiz.ShuffleQuestions = dto.ShuffleQuestions;
+            quiz.AllowRetake = dto.AllowRetake;
+
+            await _quizRepo.SaveChangesAsync();
+
+            return Ok(new
+            {
+                quiz.Id,
+                quiz.CourseId,
+                quiz.LessonId,
+                quiz.Title,
+                quiz.PassingScore,
+                quiz.TimeLimit,
+                quiz.ShuffleQuestions,
+                quiz.AllowRetake,
+                quiz.IsActive
+            });
+        }
+
 
 
         // DELETE /api/questions/{id} - delete question
