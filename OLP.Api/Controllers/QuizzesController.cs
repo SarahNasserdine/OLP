@@ -102,13 +102,29 @@ namespace OLP.Api.Controllers
             if (existingAttempt != null)
             {
                 var selectedIds = ParseSelectedQuestionIds(existingAttempt.SelectedQuestionIdsJson);
-                if (selectedIds.Count == 0)
+                if (selectedIds.Count > 0)
+                {
+                    var resumedQuestions = (await _questionRepo.GetByIdsWithAnswersAsync(selectedIds)).ToList();
+                    if (resumedQuestions.Any())
+                    {
+                        var resumed = BuildFinalQuizResponse(finalQuiz, existingAttempt, resumedQuestions);
+                        return Ok(resumed);
+                    }
+                }
+
+                var retryQuestionPool = (await _questionRepo.GetLessonQuestionsByCourseIdAsync(courseId)).ToList();
+                if (!retryQuestionPool.Any())
                     return BadRequest("Final quiz has no questions yet.");
 
-                var resumedQuestions = (await _questionRepo.GetByIdsWithAnswersAsync(selectedIds)).ToList();
+                var retrySelectedQuestions = retryQuestionPool
+                    .OrderBy(_ => Guid.NewGuid())
+                    .Take(Math.Min(10, retryQuestionPool.Count))
+                    .ToList();
 
-                var resumed = BuildFinalQuizResponse(finalQuiz, existingAttempt, resumedQuestions);
-                return Ok(resumed);
+                existingAttempt.SelectedQuestionIdsJson = JsonSerializer.Serialize(retrySelectedQuestions.Select(q => q.Id));
+                await _attemptRepo.SaveChangesAsync();
+
+                return Ok(BuildFinalQuizResponse(finalQuiz, existingAttempt, retrySelectedQuestions));
             }
 
             // Always allow retakes for final quiz.
@@ -119,7 +135,7 @@ namespace OLP.Api.Controllers
 
             var selectedQuestions = questionPool
                 .OrderBy(_ => Guid.NewGuid())
-                .Take(10)
+                .Take(Math.Min(10, questionPool.Count))
                 .ToList();
 
             var attempt = await _quizService.StartAttemptWithSelectedQuestionsAsync(
@@ -238,6 +254,48 @@ namespace OLP.Api.Controllers
         // ===============================
         // ADMIN / SUPERADMIN ROUTES
         // ===============================
+
+        // GET /api/admin/quiz-attempts?userId=&quizId=&courseId=
+        [HttpGet("/api/admin/quiz-attempts")]
+        [Authorize(Roles = "Admin,SuperAdmin")]
+        public async Task<IActionResult> GetAdminAttempts([FromQuery] int? userId, [FromQuery] int? quizId, [FromQuery] int? courseId)
+        {
+            var attempts = await _attemptRepo.GetAdminAttemptsAsync(userId, quizId, courseId);
+
+            var result = attempts.Select(a => new
+            {
+                a.Id,
+                a.QuizId,
+                QuizTitle = a.Quiz?.Title ?? "",
+                CourseId = a.Quiz?.CourseId,
+                CourseTitle = a.Quiz?.Course?.Title ?? "",
+                a.UserId,
+                UserName = a.User?.FullName ?? "",
+                UserEmail = a.User?.Email ?? "",
+                a.Score,
+                a.AttemptNumber,
+                a.AttemptDate,
+                a.SubmittedAt
+            });
+
+            return Ok(result);
+        }
+
+        // GET /api/admin/quiz-attempts/{attemptId}/review
+        [HttpGet("/api/admin/quiz-attempts/{attemptId}/review")]
+        [Authorize(Roles = "Admin,SuperAdmin")]
+        public async Task<IActionResult> ReviewAttemptForAdmin(int attemptId)
+        {
+            try
+            {
+                var review = await _quizService.GetAttemptReviewForAdminAsync(attemptId);
+                return Ok(review);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ex.Message);
+            }
+        }
 
         // GET /api/courses/{courseId}/quizzes (Student/Admin/SuperAdmin)
         [HttpGet("/api/courses/{courseId}/quizzes")]
